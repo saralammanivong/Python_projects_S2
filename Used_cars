@@ -1,0 +1,506 @@
+# Utilisation de la base de données de ce lien : https://www.kaggle.com/datasets/ananaymital/us-used-cars-dataset
+import numpy as np
+import pandas as pd
+import os
+
+# *** CONFIGURATION DES CHEMINS ***
+main_path = "/Users/salade/used_cars/"
+cars_path = "/Users/salade/Downloads/used_cars_data.csv"
+
+# *** CHARGEMENT ***
+df = pd.read_csv(cars_path, sep=",", low_memory=False)
+
+print(f"Fichier chargé de taille initiale : {df.shape}")
+
+################################################################################################
+# FILTRES POUR HOMOGENEISER ET FIABILISER LES DONNÉES
+################################################################################################
+df = df[df["bed"].isna()]
+df = df[df["cabin"].isna()]
+df = df[df["frame_damaged"] != True]
+df = df[df["has_accidents"] != True]
+df = df[df["isCab"] != True]
+df = df[~df["main_picture_url"].isna()]
+df = df[(df["owner_count"].isna()) | (df["owner_count"] == 1)]
+df = df[df["salvage"] != True]
+df = df[df["theft_title"] != True]
+df = df[df["daysonmarket"] < 365]
+
+# Suppression des colonnes (ajout de errors='ignore' pour éviter les crashs si on relance le code)
+cols_to_drop = ["bed", "bed_height", "cabin", "city", "dealer_zip",
+              "description", "exterior_color", "has_accidents", "interior_color",
+              "isCab", "frame_damaged", "latitude", "longitude", "main_picture_url", "owner_count",
+              "is_certified", "is_cpo", "salvage", "savings_amount", "seller_rating", "sp_id", "theft_title",
+              "vehicle_damage_category"]
+
+df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+
+# Supprimer 50% du dataframe (on garde 50% au hasard)
+df = df.sample(frac=0.5, random_state=42)
+
+################################################################################################
+# SÉPARATION DES VARIABLES (NUMÉRIQUES VS CATÉGORIELLES)
+################################################################################################
+
+# Variables numériques
+""""On sélectionne les noms des colonnes selon leur type : les variables numériques 
+(entiers et nombres à virgule)"""
+num_features = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+
+# Variables catégorielles
+""" On sélectionne les noms des colonnes (texte)"""
+cat_features = df.select_dtypes(include=['object']).columns.tolist()
+
+print(f"\ La séparation est terminée : {len(df)} lignes conservées.")
+print(f"-> {len(num_features)} variables numériques")
+print(f"-> {len(cat_features)} variables catégorielles")
+
+################################################################################################
+# SAUVEGARDE
+################################################################################################
+
+# Création du dossier main_path s'il n'existe pas
+if not os.path.exists(main_path):
+    os.makedirs(main_path)
+
+csv_path = os.path.join(main_path, "used_cars_data_shorter.csv")
+df.to_csv(csv_path, index=False)
+
+print(f"\n Le fichier court a été sauvergardé et se trouve ici : {csv_path}")
+
+
+#%% ################################################################################################
+# CELLULE 1 : CHARGEMENT DU PETIT FICHIER
+####################################################################################################
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+import os
+
+
+df = pd.read_csv("/Users/salade/used_cars/used_cars_data_shorter.csv")
+print("Les données sont chargées")
+
+# Flags
+"""Quelques flags pour ajouter de la robustesse au script : il s'agit d'un système de sécurité 
+pour vérifier la présence des colonnes indispensables avant de lancer les calculs, ce qui évite
+un plantage du script si les données sources sont incomplètes ou mal nommées."""
+has_price = "price" in df.columns
+has_mileage = "mileage" in df.columns
+has_year = "year" in df.columns
+has_hp = "horsepower" in df.columns
+has_make = "make_name" in df.columns
+has_fuel = "fuel_type" in df.columns
+has_daysonmarket = "daysonmarket" in df.columns
+
+#%% ################################################################################################
+# CELLULE 2.1 : EDA - STATISTIQUES DESCRIPTIVES ET QUANTITATIVES
+####################################################################################################
+
+from matplotlib.ticker import PercentFormatter
+from pandas.plotting import parallel_coordinates
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import scipy.stats as stats
+
+# Configuration visuelle
+sns.set_theme(style="whitegrid")
+
+print(" *** APERÇU DES DONNÉES ***")
+print(df.info())
+
+print("\n*** STATISTIQUES DES VARIABLES NUMÉRIQUES ***")
+cols_describe = []
+for c in ["price", "mileage", "year", "horsepower"]:
+    if c in df.columns:
+        cols_describe.append(c)
+
+if len(cols_describe) > 0:
+    print(df[cols_describe].describe())
+else:
+    print("Aucune des colonnes ['price','mileage','year','horsepower'] n'est disponible pour describe().")
+
+print("\n *** VALEURS MANQUANTES ***")
+print(df.isnull().sum().sort_values(ascending=False).head(10))
+
+print("\n *** TOP 15 DES MARQUES ***")
+if has_make:
+    print(df['make_name'].value_counts().head(15))
+else:
+    print("Colonne 'make_name' absente du dataframe.")
+
+# Technique Quantitative : TRIMEAN (Trimoyenne sur le prix)
+def calculate_trimean(series):
+    q1 = series.quantile(0.25)
+    q2 = series.quantile(0.50)
+    q3 = series.quantile(0.75)
+    return (q1 + 2*q2 + q3) / 4
+
+if has_price:
+    prix_trimean = calculate_trimean(df['price'].dropna())
+    print(f"\n Analyse quantitative du Prix :")
+    print(f"Moyenne classique : {df['price'].mean():.2f} $")
+    print(f"Trimean (Robuste) : {prix_trimean:.2f} $")
+else:
+    print("\nLa colonne 'price' est absente, donc la trimean ne peut pas être calculée")
+
+#%% #%% ############################################################################################
+# CELLULE 2.2 : EDA - GRAPHIQUES CLASSIQUES
+####################################################################################################
+
+# 1. Distribution du prix (Histogramme)
+if has_price:
+    plt.figure(figsize=(10, 5))
+    sns.histplot(df[df['price'] < 100000]['price'], bins=50, kde=True, color='blue')
+    plt.title('Distribution des Prix (Prix < 100k$)')
+    plt.xlabel('Prix ($)')
+    plt.ylabel('Fréquence')
+    plt.show()
+else:
+# %%
+    print("\nPas de distribution de prix car la colonne 'price' est absente")
+
+
+# 2. Prix médian par marque (Bar chart)
+if has_make and has_price:
+    plt.figure(figsize=(12, 6))
+    top_makes = df['make_name'].value_counts().head(15).index
+    sns.barplot(
+        data=df[df['make_name'].isin(top_makes)],
+        x='make_name', y='price',
+        estimator=np.median, palette="viridis"
+    )
+    plt.xticks(rotation=45)
+    plt.title('Prix médian par Marque (Top 15)')
+    plt.show()
+else:
+    print("\nPas de barplot price vs make (colonnes 'make_name' ou 'price' absentes)")
+
+# 3. Matrice de corrélation (Heat map)
+numeric_cols = df.select_dtypes(include=[np.number])
+if numeric_cols.shape[1] > 1:
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(numeric_cols.corr(), annot=True, cmap='coolwarm', fmt=".2f")
+    plt.title('Matrice de corrélation des variables numériques')
+    plt.show()
+else:
+    print("\Pas assez de variables numériques pour obtenir une matrice de corrélation")
+
+#%% ################################################################################################
+# CELLULE 2.3 : EDA - GRAPHIQUES AVANCÉS (Pareto, Parallel Coords, PCA)
+####################################################################################################
+
+
+# 4. Diagramme de Pareto sur les marques
+if has_make:
+    make_counts = df['make_name'].value_counts().head(15)
+    cumulative_perc = make_counts.cumsum() / make_counts.sum() * 100
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.bar(make_counts.index, make_counts.values, color="C0")
+    ax2 = ax.twinx()
+    ax2.plot(make_counts.index, cumulative_perc, color="C1", marker="D", ms=7)
+    ax2.yaxis.set_major_formatter(PercentFormatter())
+    ax.set_title("Diagramme de Pareto : Concentration des Top 15 Marques")
+    ax.set_ylabel("Nombre de véhicules")
+    ax.tick_params(axis="x", rotation=45)
+    plt.show()
+else:
+    print("\nPas de diagramme de Pareto car la colonne 'make_name' est absente")
+
+# 5. Coordonnées Parallèles (Parallel coordinates)
+cols_parallel = ['price', 'mileage', 'year', 'horsepower', 'fuel_type']
+cols_parallel_available = [c for c in cols_parallel if c in df.columns]
+
+if has_fuel and len(cols_parallel_available) >= 2:
+    df_sample = df[cols_parallel_available].dropna()
+    if len(df_sample) > 300:
+        df_sample = df_sample.sample(300, random_state=42)
+
+# Normalisation basique pour l'affichage
+    for col in ['price', 'mileage', 'year', 'horsepower']:
+        if col in df_sample.columns:
+            df_sample[col] = (df_sample[col] - df_sample[col].min()) / (df_sample[col].max() - df_sample[col].min())
+
+    plt.figure(figsize=(12, 6))
+    parallel_coordinates(df_sample, 'fuel_type', colormap='Set1', alpha=0.4)
+    plt.title("Coordonnées Parallèles (Échantillon normalisé par type de carburant)")
+    plt.show()
+else:
+    print("\nCoordonnées parallèles non tracées (colonnes manquantes ou 'fuel_type' absente).")
+
+# 6. Réduction de dimensionnalité : PCA (Principal Component Analysis)
+print("\n⚙️ Calcul de la PCA en cours...")
+num_features = ['price', 'mileage', 'year', 'daysonmarket', 'horsepower']
+num_features_available = [c for c in num_features if c in df.columns]
+
+if len(num_features_available) >= 2:
+    df_pca = df[num_features_available].dropna()
+    if len(df_pca) > 20000:
+        df_pca = df_pca.sample(20000, random_state=42)  # Échantillon de 20k pour la vitesse
+
+    scaler = StandardScaler()
+    scaled_data = scaler.fit_transform(df_pca)
+
+    pca = PCA(n_components=2)
+    pca_result = pca.fit_transform(scaled_data)
+    df_pca['PCA1'] = pca_result[:, 0]
+    df_pca['PCA2'] = pca_result[:, 1]
+
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(x='PCA1', y='PCA2', data=df_pca, alpha=0.5, s=15, color='purple')
+    plt.title("Réduction de dimensionnalité : PCA (2 composantes)")
+    plt.xlabel(f"PCA 1 ({pca.explained_variance_ratio_[0]*100:.1f}%)")
+    plt.ylabel(f"PCA 2 ({pca.explained_variance_ratio_[1]*100:.1f}%)")
+    plt.show()
+else:
+    print("PCA non calculée : pas assez de variables parmi ['price','mileage','year','daysonmarket','horsepower'].")
+
+#%% ################################################################################################
+# CELLULE 2.4 : EDA - ANALYSE BIVARIÉE STRUCTURÉE
+####################################################################################################
+
+print("\n ***ANALYSE BIVARIÉE ***")
+
+# 1. Price vs Mileage
+if has_price and has_mileage:
+    plt.figure(figsize=(8,6))
+    sns.scatterplot(x='mileage', y='price', data=df, alpha=0.3)
+    plt.title("Relation Prix vs Kilométrage")
+    plt.show()
+else:
+    print("Pas de scatter plot mileage vs price (colonnes manquantes).")
+
+# 2. Price vs Year
+if has_price and has_year:
+    plt.figure(figsize=(8,6))
+    sns.scatterplot(x='year', y='price', data=df, alpha=0.3)
+    plt.title("Relation Prix vs Année")
+    plt.show()
+else:
+    print("Pas de scatter plot year vs price (colonnes manquantes).")
+
+# 3. Price vs Horsepower
+if has_price and has_hp:
+    plt.figure(figsize=(8,6))
+    sns.scatterplot(x='horsepower', y='price', data=df, alpha=0.3)
+    plt.title("Relation Prix vs Puissance")
+    plt.show()
+else:
+    print("Pas de scatter plot horsepower vs price (colonnes manquantes).")
+
+# 4. ANOVA simple : impact du type de carburant sur le prix
+if has_price and has_fuel:
+    fuel_groups = [group['price'].dropna() for name, group in df.groupby('fuel_type') if not group['price'].dropna().empty]
+    if len(fuel_groups) > 1:
+        anova_result = stats.f_oneway(*fuel_groups)
+        print("\nANOVA - Impact du type de carburant sur le prix")
+        print(f"F-statistic : {anova_result.statistic:.2f}")
+        print(f"P-value : {anova_result.pvalue:.5f}")
+    else:
+        print("\nANOVA non réalisée : pas assez de groupes de 'fuel_type'.")
+else:
+    print("\nANOVA non réalisée : 'price' ou 'fuel_type' manquante.")
+
+#%% ################################################################################################
+# CELLULE 2.5 : EDA - ANALYSE DES VALEURS ABERRANTES
+####################################################################################################
+
+print("\n *** ANALYSE DES OUTLIERS ***")
+
+num_cols_outliers = []
+for c in ['price', 'mileage', 'year', 'horsepower']:
+    if c in df.columns:
+        num_cols_outliers.append(c)
+
+# 1. Skewness (asymétrie)
+if len(num_cols_outliers) > 0:
+    print("\nSkewness des variables numériques :")
+    for col in num_cols_outliers:
+        print(f"{col} : {df[col].skew():.2f}")
+else:
+    print("Aucune colonne parmi ['price','mileage','year','horsepower'] pour la skewness.")
+
+# 2. Boxplots
+if len(num_cols_outliers) > 0:
+    plt.figure(figsize=(12, 8))
+    for i, col in enumerate(num_cols_outliers, 1):
+        plt.subplot(2, 2, i)
+        sns.boxplot(x=df[col])
+        plt.title(f"Boxplot - {col}")
+    plt.tight_layout()
+    plt.show()
+
+# 3. Méthode IQR pour détecter les outliers du prix
+if has_price:
+    Q1 = df['price'].quantile(0.25)
+    Q3 = df['price'].quantile(0.75)
+    IQR = Q3 - Q1
+
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+
+    outliers_price = df[(df['price'] < lower_bound) | (df['price'] > upper_bound)]
+    print(f"\nNombre d'outliers détectés sur le prix (IQR) : {len(outliers_price)}")
+    print(f"Soit {len(outliers_price)/len(df)*100:.2f}% du dataset")
+else:
+    print("\nImpossible de détecter les outliers du prix : colonne 'price' absente.")
+
+#%% ################################################################################################
+# CELLULE 2.6 : EDA - ANALYSE DES VARIABLES CATÉGORIELLES
+####################################################################################################
+
+print("\n--- ANALYSE DES VARIABLES CATÉGORIELLES ---")
+
+# 1. Cardinalité
+cat_df = df.select_dtypes(include='object')
+if cat_df.shape[1] > 0:
+    cardinality = cat_df.nunique().sort_values(ascending=False)
+    print("\nCardinalité des variables catégorielles :")
+    print(cardinality)
+else:
+    print("\nAucune variable catégorielle dans le dataframe.")
+
+# 2. Distribution Fuel Type
+if has_fuel:
+    plt.figure(figsize=(8,5))
+    df['fuel_type'].value_counts(normalize=True).plot(kind='bar')
+    plt.title("Distribution proportionnelle du type de carburant")
+    plt.ylabel("Proportion")
+    plt.show()
+else:
+    print("\nDistribution du type de carburant non tracée : 'fuel_type' absente.")
+
+# 3. Distribution Transmission
+if 'transmission' in df.columns:
+    plt.figure(figsize=(8,5))
+    df['transmission'].value_counts(normalize=True).plot(kind='bar')
+    plt.title("Distribution proportionnelle de la transmission")
+    plt.ylabel("Proportion")
+    plt.show()
+
+# 4. Top Body Types
+if 'body_type' in df.columns:
+    plt.figure(figsize=(8,5))
+    df['body_type'].value_counts().head(10).plot(kind='bar')
+    plt.title("Top 10 des types de carrosserie")
+    plt.show()
+    
+#%% ################################################################################################
+# CELLULE 2.7 : EDA - ANALYSE APPROFONDIE DE PRICE
+####################################################################################################
+
+print("\n *** ANALYSE DE LA VARIABLE CIBLE : PRICE ***")
+
+if has_price:
+# 1. Distribution log-transformée
+    df['log_price'] = np.log1p(df['price'])
+
+    plt.figure(figsize=(8,5))
+    sns.histplot(df['log_price'], bins=50, kde=True)
+    plt.title("Distribution du Log(Price)")
+    plt.show()
+
+# 2. Variance expliquée par corrélation
+    corr_with_price = df.corr(numeric_only=True)['price'].sort_values(ascending=False)
+    print("\nCorrélation des variables numériques avec le prix :")
+    print(corr_with_price)
+else:
+    print("\nImpossible d'analyser la cible 'price' : la colonne est absente.")
+    
+#%% ################################################################################################
+# CELLULE 2.8 : SYNTHÈSE POUR LE FEATURE ENGINEERING
+####################################################################################################
+from scipy.stats import normaltest
+
+# 1. Gestion des catégories rares : groupement des catégories > 5% sous "Other"
+if has_make:
+    print("\n> Gestion des marques rares :")
+    freq = df["make_name"].value_counts(normalize=True)
+    rare_labels = freq[freq < 0.05].index
+    df["make_name_grouped"] = df["make_name"].replace(rare_labels, "Other")
+    print(f"Nombre de marques regroupées en 'Other' : {len(rare_labels)}")
+
+# 2. Discrétisation / Binning : Conversion de l'âge (variable continue) en catégories pour simplifier les relations
+if has_year:
+    df['car_age'] = 2026 - df['year']
+    # Création de 3 classes : Récent, Intermédiaire, Ancien
+    df["age_group"] = pd.cut(df["car_age"], bins=3, labels=["Récent", "Intermédiaire", "Ancien"])
+    print("\n> Discrétisation de l'âge terminée.")
+    print(df["age_group"].value_counts())
+
+# 3. Test de normalité statistique
+if has_price:
+    # On prend un échantillon car le test est sensible aux grands datasets
+    sample_price = df['price'].dropna().sample(min(1000, len(df)))
+    stat, p = normaltest(sample_price)
+    print(f"\n> Test de normalité (D'Agostino) sur le prix : p-value = {p:.5f}")
+    if p < 0.05:
+        print("Interprétation : La distribution n'est pas normale. Une transformation log est recommandée.")
+
+# 4. Création d'indicateurs d'interaction
+if has_hp and has_price:
+    # Exemple du cours : combiner des variables pour capturer des interactions
+    df["hp_price_ratio"] = df["horsepower"] / (df["price"] + 1)
+    
+#%% ################################################################################################
+# CELLULE 3 : PREPROCESSING ET FEATURE ENGINEERING
+####################################################################################################
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.impute import SimpleImputer
+
+print("*** DÉMARRAGE DU PREPROCESSING FINAL ***")
+
+# 1. Gestion des valeurs manquantes
+# On traite les données manquantes avant transformation.
+# On impute par la médiane pour les numériques (plus robuste aux outliers détectés en EDA)
+imputer_num = SimpleImputer(strategy="median")
+cols_to_impute = ['horsepower', 'mileage', 'daysonmarket']
+available_cols = [c for c in cols_to_impute if c in df.columns]
+df[available_cols] = imputer_num.fit_transform(df[available_cols])
+
+# 2. Créations d'indicateurs
+# On combine les variables pour capturer une information plus significative
+if has_mileage and has_year:
+    # Calcul de l'âge si pas encore fait
+    if 'car_age' not in df.columns:
+        df['car_age'] = 2026 - df['year']
+    # Intensité d'usage (kilométrage moyen par an)
+    df['mileage_per_year'] = df['mileage'] / (df['car_age'] + 1)
+    print("> Indicateur 'mileage_per_year' créé.")
+
+# 3. Gestion des catégories rares
+# On regroupe sous "Other" les labels représentant moins de 5% du dataset
+for col in ['fuel_type', 'transmission']:
+    if col in df.columns:
+        freq = df[col].value_counts(normalize=True)
+        rare_labels = freq[freq < 0.05].index
+        df[col] = df[col].replace(rare_labels, "Other")
+print("> Gestion des catégories rares terminée.")
+
+# 4. Transformation de features via le logarithme afin de rendre les distributions plus proches de la normale
+if has_price:
+    df["price_log"] = np.log1p(df["price"])
+    print("> Transformation logarithmique du prix effectuée.")
+
+# 5. Standardisation pour harmoniser les échelles (Moyenne = 0, Écart-type = 1)
+scaler = StandardScaler()
+cols_to_scale = ['mileage', 'horsepower', 'car_age']
+available_scale = [c for c in cols_to_scale if c in df.columns]
+df[available_scale] = scaler.fit_transform(df[available_scale])
+print(f"> Standardisation effectuée sur : {available_scale}")
+
+# 5 BIS. Normalisation Min-Max
+scaler_minmax = MinMaxScaler()
+df[available_scale] = scaler_minmax.fit_transform(df[available_scale])
+print(f"> Normalisation Min-Max effectuée sur : {available_scale}")
+
+# 6. Encodage One-Hot pour les variables catégorielles sans ordre inhérent
+
+cols_to_encode = ['fuel_type', 'age_group', 'make_name_grouped']
+available_encode = [c for c in cols_to_encode if c in df.columns]
+df = pd.get_dummies(df, columns=available_encode, drop_first=True)
+print(f"> Encodage One-Hot effectué sur : {available_encode}")
+
+print(f"Nombre final de colonnes (Features) : {df.shape[1]}")
