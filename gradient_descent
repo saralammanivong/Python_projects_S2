@@ -1,0 +1,107 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# *** CHARGEMENT DES DONNÉES ***
+df = pd.read_csv("data.csv", sep=";")
+print(df.head())
+
+# On convertit la colonne CSV en nombres décimaux (float) utilisables pour les calculs
+column_name = "China"
+y_full = df[column_name].values.astype(float)
+
+# Pour AR(1): x_i = y_{t-1}, y_i = y_t
+x = y_full[:-1]      # x_i (y_{t-1})
+y = y_full[1:]       # y_i (y_t)
+n = len(y)           # nombre d'observations
+
+# *** DÉFINITION DE LA FONCTION COÛT ET DÉFINITION DU MODÈLE AR(1) ***
+def f(x, a, b):
+    return a * x + b # Il s'agit d'un modèle linéaire
+
+def J(a, b, x, y):
+# La fonction de coût est J(a,b) = 1/(2n) * Σ (a*x_i + b - y_i)² : il s'agit de l'erreur moyenne quadratique
+    errors = f(x, a, b) - y # Différence entre le modèle prédit et le réel (erreurs)
+    return np.sum(errors ** 2) / (2 * n) # Formule de la fonction de coût
+
+def grad_J(a, b, x, y): 
+    """ Calcul des dérivées partielles (des pentes)
+    1) ∂J/∂a = (1/n) Σ x_i (a*x_i + b - y_i)
+    2) ∂J/∂b = (1/n) Σ (a*x_i + b - y_i)
+    """
+    errors = f(x, a, b) - y
+    n = len(y)
+    da = np.sum(x * errors) / n
+    db = np.sum(errors) / n
+    return da, db
+
+
+# *** DESCENTE DE GRADIENT ***
+def descente_gradient(x, y, learning_rate=0.0005, iteration=20000, tol=0.000001): # On se limite à 20000 itérations avec un seuil de tolérance de 0.000001
+    """
+    Initialisation aléatoire du premier a (a0 dans le cours) et du premier b (b0 dans le cours)
+    puis on met à jour a tq : a = a - alpha * ∂J/∂a à chaque itération
+    """
+    # On initialise aléatoirement a0 et b0 
+    a = np.random.randn()  # a0
+    b = np.random.randn()  # b0
+
+    history_J = [J(a, b, x, y)] # On crée une liste qui enregistre J à chaque itération
+    J_previous = history_J[0] # Valeur de J à l'itération précédente
+    k = 0
+
+    # Tant que k < iteration et pas de convergence  # ← CORRIGÉ : < au lieu de >
+    while k < iteration : 
+        # 1) Gradients
+        da, db = grad_J(a, b, x, y)
+        # 2) Mise à jour
+        a = a - learning_rate * da
+        b = b - learning_rate * db
+        # 3) Nouveau coût
+        J_new = J(a, b, x, y)
+        history_J.append(J_new)
+        
+        # 4) Test convergence
+        if abs(J_previous - J_new) < tol:
+            print(f"Convergence à l'itération {k+1}")
+            break
+            
+        J_previous = J_new
+        k = k + 1
+    
+    return a, b, np.array(history_J)
+
+
+
+# *** LANCEMENT DE LA DESCENTE DE GRADIENT ***
+a_final, b_final, J_hist = descente_gradient(x, y)
+
+print(f"Série: {column_name}")
+print(f"a final = {a_final:} (coefficient AR(1))")
+print(f"b final = {b_final:} (constante)")
+print(f"J final = {J_hist[-1]}")  
+
+print("\n" + "="*50)
+
+# *** VISUALISATION ***
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(J_hist)
+plt.xlabel("Itération k")
+plt.ylabel("J(a,b)")
+plt.title("Évolution de J(a,b)")
+plt.grid(True)
+
+plt.subplot(1, 2, 2)
+y_hat = f(x, a_final, b_final)
+plt.plot(y, label="y_i réelle")
+plt.plot(y_hat, "--", label="a x_i + b")
+plt.legend()
+plt.title(f"{column_name}: réel VS. modèle prédictif")
+
+plt.tight_layout()
+plt.show()
+
+plt.show() 
+
